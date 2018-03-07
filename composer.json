@@ -1,0 +1,19 @@
+{
+    "name": "arthem/object-reference-bundle",
+    "description": "Object reference bundle",
+    "type": "symfony-bundle",
+    "license": "MIT",
+    "require": {
+        "php": ">=7",
+        "guzzle-http:": "^2.5",
+        "symfony/symfony": "^3"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^6.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Arthem\\Bundle\\ObjectReferenceBundle\\": ""
+        }
+    }
+}

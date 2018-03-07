@@ -1,0 +1,9 @@
+services:
+    _defaults:
+        autowire: true
+
+    Arthem\Bundle\ObjectReferenceBundle\Mapper\ObjectMapper: ~
+
+    Arthem\Bundle\ObjectReferenceBundle\Doctrine\ObjectReferenceListener:
+        tags:
+            - { name: doctrine.event_subscriber }
