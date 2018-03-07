@@ -5,7 +5,6 @@
     "license": "MIT",
     "require": {
         "php": ">=7",
-        "guzzle-http:": "^2.5",
         "symfony/symfony": "^3"
     },
     "require-dev": {
