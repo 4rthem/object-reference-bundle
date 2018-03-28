@@ -137,7 +137,8 @@ class ObjectReferenceListener implements EventSubscriber
             'nullable' => $idField['nullable'],
         ];
 
-        unset($metadata->fieldMappings[$fieldName], $metadata->fieldNames[$fieldName]);
+        unset($metadata->fieldMappings[$fieldName]);
+        unset($metadata->fieldNames[array_search($fieldName, $metadata->fieldNames, true)]);
 
         $metadata->mapField($typeField);
         $metadata->mapField($idField);
