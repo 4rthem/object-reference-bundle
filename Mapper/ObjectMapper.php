@@ -2,7 +2,7 @@
 
 namespace Arthem\Bundle\ObjectReferenceBundle\Mapper;
 
-use Doctrine\Common\Util\ClassUtils;
+use Doctrine\Common\Persistence\Proxy;
 
 class ObjectMapper
 {
@@ -16,6 +16,34 @@ class ObjectMapper
         $this->mapping = $mapping;
     }
 
+    public function isObjectMapped($object): bool
+    {
+        $className = self::getRealClass(is_string($object) ? $object : get_class($object));
+
+        if (false === array_search($className, $this->mapping, true)) {
+            $reflection = new \ReflectionClass($className);
+            while ($reflection->getParentClass()) {
+                $reflection = $reflection->getParentClass();
+                if (false !== array_search($reflection->getName(), $this->mapping, true)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private static function getRealClass($class): string
+    {
+        if (false === $pos = strrpos($class, '\\' . Proxy::MARKER . '\\')) {
+            return $class;
+        }
+
+        return substr($class, $pos + Proxy::MARKER_LENGTH + 2);
+    }
+
     public function getClassName(string $objectKey): string
     {
         if (!isset($this->mapping[$objectKey])) {
@@ -27,7 +55,7 @@ class ObjectMapper
 
     public function getObjectKey($object): string
     {
-        $className = ClassUtils::getRealClass(is_string($object) ? $object : get_class($object));
+        $className = self::getRealClass(is_string($object) ? $object : get_class($object));
 
         if (false === $key = array_search($className, $this->mapping, true)) {
             $reflection = new \ReflectionClass($className);
