@@ -6,6 +6,7 @@ use Arthem\Bundle\ObjectReferenceBundle\Mapper\ObjectMapper;
 use Arthem\Bundle\ObjectReferenceBundle\Mapping\Annotation\ObjectReference;
 use Doctrine\Common\Annotations\Reader;
 use Doctrine\Common\EventSubscriber;
+use Doctrine\Common\Persistence\ObjectManager;
 use Doctrine\ORM\Event\LifecycleEventArgs;
 use Doctrine\ORM\Event\LoadClassMetadataEventArgs;
 use Doctrine\ORM\Events;
@@ -13,15 +14,12 @@ use Doctrine\ORM\Mapping\ClassMetadataInfo;
 
 class ObjectReferenceListener implements EventSubscriber
 {
+    private static $config;
+
     /**
      * @var Reader
      */
     private $annotationReader;
-
-    /**
-     * @var array
-     */
-    private $config;
 
     /**
      * @var ObjectMapper
@@ -43,41 +41,44 @@ class ObjectReferenceListener implements EventSubscriber
         ];
     }
 
-    public function prePersist(LifecycleEventArgs $eventArgs)
+    private function loadConfiguration(ObjectManager $objectManager, string $class): array
     {
-        $object = $eventArgs->getObject();
-
-        if (!isset($this->config[get_class($object)])) {
-            return;
-        }
-
-        $reflClass = new \ReflectionClass($object);
-        foreach ($this->config[get_class($object)] as $fieldName => $field) {
-            $reflProp = $reflClass->getProperty($fieldName);
-            $reflProp->setAccessible(true);
-            $value = $reflProp->getValue($object);
-            if (is_object($value)) {
-                $reflId = $reflClass->getProperty($field['id']);
-                $reflId->setAccessible(true);
-                $reflId->setValue($object, $value->getId());
-
-                $reflType = $reflClass->getProperty($field['type']);
-                $reflType->setAccessible(true);
-                $reflType->setValue($object, $this->objectMapper->getObjectKey($value));
+        $config = [];
+        if (isset(self::$config[$class])) {
+            $config = self::$config[$class];
+        } else {
+            $factory = $objectManager->getMetadataFactory();
+            $cacheDriver = $factory->getCacheDriver();
+            if ($cacheDriver) {
+                $cacheId = self::getCacheId($class);
+                if (($cached = $cacheDriver->fetch($cacheId)) !== false) {
+                    self::$config[$class] = $cached;
+                    $config = $cached;
+                } else {
+                    // re-generate metadata on cache miss
+                    $this->loadMetadataForObjectClass($objectManager, $factory->getMetadataFor($class));
+                    if (isset(self::$config[$class])) {
+                        $config = self::$config[$class];
+                    }
+                }
             }
         }
+
+        return $config;
     }
 
     public function postLoad(LifecycleEventArgs $eventArgs)
     {
         $object = $eventArgs->getObject();
+        $class = get_class($object);
         $em = $eventArgs->getEntityManager();
+        $this->loadConfiguration($em, $class);
 
-        if (!isset($this->config[get_class($object)])) {
+        if (!isset(self::$config[$class])) {
             return;
         }
 
-        foreach ($this->config[get_class($object)] as $fieldName => $field) {
+        foreach (self::$config[$class] as $fieldName => $field) {
             $id = null;
             $type = null;
 
@@ -96,12 +97,50 @@ class ObjectReferenceListener implements EventSubscriber
         }
     }
 
-    public function loadClassMetadata(LoadClassMetadataEventArgs $eventArgs)
+    public function prePersist(LifecycleEventArgs $eventArgs)
     {
-        /** @var ClassMetadataInfo $metadata */
-        $metadata = $eventArgs->getClassMetadata();
+        $object = $eventArgs->getObject();
+        $class = get_class($object);
+        $this->loadConfiguration($eventArgs->getObjectManager(), $class);
+
+        if (!isset(self::$config[$class])) {
+            return;
+        }
+
+        $reflClass = new \ReflectionClass($object);
+        foreach (self::$config[$class] as $fieldName => $field) {
+            $reflProp = $reflClass->getProperty($fieldName);
+            $reflProp->setAccessible(true);
+            $value = $reflProp->getValue($object);
+            if (is_object($value)) {
+                $reflId = $reflClass->getProperty($field['id']);
+                $reflId->setAccessible(true);
+                $reflId->setValue($object, $value->getId());
+
+                $reflType = $reflClass->getProperty($field['type']);
+                $reflType->setAccessible(true);
+                $reflType->setValue($object, $this->objectMapper->getObjectKey($value));
+            }
+        }
+    }
+
+    /**
+     * Scans the objects for extended annotations
+     * event subscribers must subscribe to loadClassMetadata event
+     *
+     * @param  ObjectManager $objectManager
+     * @param  object        $metadata
+     * @return void
+     */
+    public function loadMetadataForObjectClass(ObjectManager $objectManager, ClassMetadataInfo $metadata)
+    {
+        $config = [];
 
         if ($metadata->isMappedSuperclass) {
+            return;
+        }
+
+        if (isset(self::$config[$metadata->name])) {
             return;
         }
 
@@ -115,13 +154,30 @@ class ObjectReferenceListener implements EventSubscriber
             $annotations = $this->annotationReader->getPropertyAnnotations($class->getProperty($fieldName));
             foreach ($annotations as $annotation) {
                 if ($annotation instanceof ObjectReference) {
-                    $this->createFields($metadata, $annotation, $fieldName);
+                    $this->createFields($config, $metadata, $annotation, $fieldName);
                 }
             }
         }
+
+        $cmf = $objectManager->getMetadataFactory();
+        // cache the metadata (even if it's empty)
+        // caching empty metadata will prevent re-parsing non-existent annotations
+        $cacheId = self::getCacheId($metadata->name);
+        if ($cacheDriver = $cmf->getCacheDriver()) {
+            $cacheDriver->save($cacheId, $config, null);
+        }
+
+        if ($config) {
+            self::$config[$metadata->name] = $config;
+        }
     }
 
-    private function createFields(ClassMetadataInfo $metadata, ObjectReference $annotation, $fieldName)
+    public function loadClassMetadata(LoadClassMetadataEventArgs $eventArgs)
+    {
+        $this->loadMetadataForObjectClass($eventArgs->getObjectManager(), $eventArgs->getClassMetadata());
+    }
+
+    private function createFields(array &$config, ClassMetadataInfo $metadata, ObjectReference $annotation, $fieldName)
     {
         $fieldMapping = $metadata->fieldMappings[$fieldName];
 
@@ -143,13 +199,14 @@ class ObjectReferenceListener implements EventSubscriber
         $metadata->mapField($typeField);
         $metadata->mapField($idField);
 
-        $className = $metadata->getName();
-        if (!isset($this->config[$className])) {
-            $this->config[$className] = [];
-        }
-        $this->config[$className][$fieldName] = [
+        $config[$fieldName] = [
             'type' => $typeField['fieldName'],
             'id' => $idField['fieldName'],
         ];
+    }
+
+    private static function getCacheId(string $className): string
+    {
+        return $className.'_CLASSMETADATA';
     }
 }
