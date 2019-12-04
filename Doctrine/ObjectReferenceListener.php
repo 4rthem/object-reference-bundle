@@ -140,10 +140,6 @@ class ObjectReferenceListener implements EventSubscriber
             return;
         }
 
-        if (isset(self::$config[$metadata->name])) {
-            return;
-        }
-
         $class = $metadata->getReflectionClass();
 
         foreach ($metadata->fieldMappings as $fieldName => $fieldMapping) {
