@@ -17,10 +17,8 @@ class Configuration implements ConfigurationInterface
      */
     public function getConfigTreeBuilder()
     {
-        $treeBuilder = new TreeBuilder();
-        $rootNode = $treeBuilder->root('arthem_object_reference');
-
-        $rootNode
+        $treeBuilder = new TreeBuilder('arthem_object_reference');
+        $treeBuilder->getRootNode()
             ->children()
                 ->arrayNode('mapping')
                     ->useAttributeAsKey('key')
