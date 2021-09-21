@@ -2,7 +2,9 @@
 
 namespace Arthem\Bundle\ObjectReferenceBundle\Mapper;
 
-use Doctrine\Common\Persistence\Proxy;
+use Doctrine\Persistence\Proxy;
+use InvalidArgumentException;
+use ReflectionClass;
 
 class ObjectMapper
 {
@@ -21,7 +23,7 @@ class ObjectMapper
         $className = self::getRealClass(is_string($object) ? $object : get_class($object));
 
         if (false === array_search($className, $this->mapping, true)) {
-            $reflection = new \ReflectionClass($className);
+            $reflection = new ReflectionClass($className);
             while ($reflection->getParentClass()) {
                 $reflection = $reflection->getParentClass();
                 if (false !== array_search($reflection->getName(), $this->mapping, true)) {
@@ -47,7 +49,7 @@ class ObjectMapper
     public function getClassName(string $objectKey): string
     {
         if (!isset($this->mapping[$objectKey])) {
-            throw new \InvalidArgumentException(sprintf('Undefined object "%s" in the object mapping', $objectKey));
+            throw new InvalidArgumentException(sprintf('Undefined object "%s" in the object mapping', $objectKey));
         }
 
         return $this->mapping[$objectKey];
@@ -58,7 +60,7 @@ class ObjectMapper
         $className = self::getRealClass(is_string($object) ? $object : get_class($object));
 
         if (false === $key = array_search($className, $this->mapping, true)) {
-            $reflection = new \ReflectionClass($className);
+            $reflection = new ReflectionClass($className);
             while ($reflection->getParentClass()) {
                 $reflection = $reflection->getParentClass();
                 if (false !== $key = array_search($reflection->getName(), $this->mapping, true)) {
@@ -66,7 +68,7 @@ class ObjectMapper
                 }
             }
 
-            throw new \InvalidArgumentException(sprintf(
+            throw new InvalidArgumentException(sprintf(
                     'Class "%s" is not defined in the object mapping',
                     $className)
             );

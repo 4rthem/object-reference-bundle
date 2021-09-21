@@ -11,6 +11,7 @@ use Doctrine\ORM\Event\LoadClassMetadataEventArgs;
 use Doctrine\ORM\Events;
 use Doctrine\ORM\Mapping\ClassMetadataInfo;
 use Doctrine\Persistence\ObjectManager;
+use ReflectionClass;
 
 class ObjectReferenceListener implements EventSubscriber
 {
@@ -107,7 +108,7 @@ class ObjectReferenceListener implements EventSubscriber
             return;
         }
 
-        $reflClass = new \ReflectionClass($object);
+        $reflClass = new ReflectionClass($object);
         foreach (self::$config[$class] as $fieldName => $field) {
             $reflProp = $reflClass->getProperty($fieldName);
             $reflProp->setAccessible(true);
