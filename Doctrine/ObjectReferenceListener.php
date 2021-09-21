@@ -6,11 +6,11 @@ use Arthem\Bundle\ObjectReferenceBundle\Mapper\ObjectMapper;
 use Arthem\Bundle\ObjectReferenceBundle\Mapping\Annotation\ObjectReference;
 use Doctrine\Common\Annotations\Reader;
 use Doctrine\Common\EventSubscriber;
-use Doctrine\Common\Persistence\ObjectManager;
 use Doctrine\ORM\Event\LifecycleEventArgs;
 use Doctrine\ORM\Event\LoadClassMetadataEventArgs;
 use Doctrine\ORM\Events;
 use Doctrine\ORM\Mapping\ClassMetadataInfo;
+use Doctrine\Persistence\ObjectManager;
 
 class ObjectReferenceListener implements EventSubscriber
 {
