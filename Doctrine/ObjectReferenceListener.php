@@ -16,10 +16,10 @@ use Doctrine\Persistence\ObjectManager;
 
 final class ObjectReferenceListener implements EventSubscriber
 {
-    private static array $config = [];
+    private array $config = [];
 
     public function __construct(
-        private readonly ObjectMapper $objectMapper
+        private readonly ObjectMapper $objectMapper,
     ) {
     }
 
@@ -34,7 +34,7 @@ final class ObjectReferenceListener implements EventSubscriber
 
     private function loadConfiguration(ObjectManager $objectManager, string $class): void
     {
-        if (isset(self::$config[$class])) {
+        if (isset($this->config[$class])) {
             return;
         }
 
@@ -49,11 +49,11 @@ final class ObjectReferenceListener implements EventSubscriber
         $em = $eventArgs->getObjectManager();
         $this->loadConfiguration($em, $class);
 
-        if (!isset(self::$config[$class])) {
+        if (!isset($this->config[$class])) {
             return;
         }
 
-        foreach (self::$config[$class] as $fieldName => $field) {
+        foreach ($this->config[$class] as $fieldName => $field) {
             $id = null;
             $type = null;
 
@@ -78,12 +78,12 @@ final class ObjectReferenceListener implements EventSubscriber
         $class = get_class($object);
         $this->loadConfiguration($eventArgs->getObjectManager(), $class);
 
-        if (!isset(self::$config[$class])) {
+        if (!isset($this->config[$class])) {
             return;
         }
 
         $reflClass = new \ReflectionClass($object);
-        foreach (self::$config[$class] as $fieldName => $field) {
+        foreach ($this->config[$class] as $fieldName => $field) {
             $reflProp = $reflClass->getProperty($fieldName);
             $reflProp->setAccessible(true);
             $value = $reflProp->getValue($object);
@@ -112,7 +112,7 @@ final class ObjectReferenceListener implements EventSubscriber
         }
 
         $className = $metadata->getName();
-        if (isset(self::$config[$className])) {
+        if (isset($this->config[$className])) {
             return;
         }
 
@@ -137,7 +137,7 @@ final class ObjectReferenceListener implements EventSubscriber
         $cmf->setMetadataFor($class->getName(), $metadata);
 
         if (!empty($config)) {
-            self::$config[$className] = $config;
+            $this->config[$className] = $config;
         }
     }
 
@@ -188,10 +188,5 @@ final class ObjectReferenceListener implements EventSubscriber
         ];
 
         return $config;
-    }
-
-    private static function getCacheId(string $className): string
-    {
-        return $className.'_CLASSMETADATA';
     }
 }
