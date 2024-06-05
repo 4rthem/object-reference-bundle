@@ -11,6 +11,7 @@ use Doctrine\ORM\Event\PostLoadEventArgs;
 use Doctrine\ORM\Event\PrePersistEventArgs;
 use Doctrine\ORM\Events;
 use Doctrine\ORM\Mapping\ClassMetadata;
+use Doctrine\ORM\Mapping\FieldMapping;
 use Doctrine\Persistence\ObjectManager;
 
 final class ObjectReferenceListener implements EventSubscriber
@@ -162,19 +163,31 @@ final class ObjectReferenceListener implements EventSubscriber
     private function createFields(array $config, ClassMetadata $metadata, ObjectReference $annotation, $fieldName): array
     {
         $fieldMapping = $metadata->getFieldMapping($fieldName);
+
+        if (!is_array($fieldMapping)) {
+            assert($fieldMapping instanceof FieldMapping);
+
+            $fieldMapping = [
+                'fieldName' => $fieldMapping->fieldName,
+                'nullable' => $fieldMapping->nullable,
+                'type' => $fieldMapping->type,
+                'length' => $fieldMapping->length,
+            ];
+        }
+
         $typeField = [
             'fieldName' => $fieldMapping['fieldName'].'Type',
             'type' => Types::STRING,
             'length' => $annotation->getKeyLength(),
-            'nullable' => $fieldMapping->nullable,
+            'nullable' => $fieldMapping['nullable'],
         ];
 
         // Copy field type as it represents the ID specification
         $idField = [
-            'fieldName' => $fieldMapping->fieldName.'Id',
-            'type' => $fieldMapping->type,
-            'length' => $fieldMapping->length,
-            'nullable' => $fieldMapping->nullable,
+            'fieldName' => $fieldMapping['fieldName'].'Id',
+            'type' => $fieldMapping['type'],
+            'length' => $fieldMapping['length'],
+            'nullable' => $fieldMapping['nullable'],
         ];
 
         unset($metadata->fieldMappings[$fieldName]);

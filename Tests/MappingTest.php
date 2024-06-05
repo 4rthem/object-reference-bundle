@@ -57,9 +57,9 @@ class MappingTest extends TestCase
         ], $metadata->getColumnNames());
 
         $mapping = $metadata->getFieldMapping('personType');
-        $this->assertEquals(false, $mapping->nullable);
+        $this->assertEquals(false, $mapping['nullable']);
         $mapping = $metadata->getFieldMapping('ownerType');
-        $this->assertEquals(true, $mapping->nullable);
-        $this->assertEquals('owner_type', $mapping->columnName);
+        $this->assertEquals(true, $mapping['nullable']);
+        $this->assertEquals('owner_type', $mapping['columnName']);
     }
 }
