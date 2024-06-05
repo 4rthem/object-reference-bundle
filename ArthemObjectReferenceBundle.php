@@ -1,6 +1,6 @@
 <?php
 
-namespace Arthem\Bundle\ObjectReferenceBundle;
+namespace Arthem\ObjectReference;
 
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 

@@ -1,32 +1,24 @@
 <?php
 
-namespace Arthem\Bundle\ObjectReferenceBundle\Mapper;
+namespace Arthem\ObjectReferenceBundle\Mapper;
 
 use Doctrine\Persistence\Proxy;
-use InvalidArgumentException;
-use ReflectionClass;
 
-class ObjectMapper
+final readonly class ObjectMapper
 {
-    /**
-     * @var array
-     */
-    protected $mapping;
-
-    public function __construct(array $mapping)
+    public function __construct(private array $mapping)
     {
-        $this->mapping = $mapping;
     }
 
-    public function isObjectMapped($object): bool
+    public function isObjectMapped(object|string $object): bool
     {
         $className = self::getRealClass(is_string($object) ? $object : get_class($object));
 
-        if (false === array_search($className, $this->mapping, true)) {
-            $reflection = new ReflectionClass($className);
+        if (!in_array($className, $this->mapping, true)) {
+            $reflection = new \ReflectionClass($className);
             while ($reflection->getParentClass()) {
                 $reflection = $reflection->getParentClass();
-                if (false !== array_search($reflection->getName(), $this->mapping, true)) {
+                if (in_array($reflection->getName(), $this->mapping, true)) {
                     return true;
                 }
             }
@@ -39,7 +31,7 @@ class ObjectMapper
 
     private static function getRealClass($class): string
     {
-        if (false === $pos = strrpos($class, '\\' . Proxy::MARKER . '\\')) {
+        if (false === $pos = strrpos($class, '\\'.Proxy::MARKER.'\\')) {
             return $class;
         }
 
@@ -49,18 +41,18 @@ class ObjectMapper
     public function getClassName(string $objectKey): string
     {
         if (!isset($this->mapping[$objectKey])) {
-            throw new InvalidArgumentException(sprintf('Undefined object "%s" in the object mapping', $objectKey));
+            throw new \InvalidArgumentException(sprintf('Undefined object "%s" in the object mapping', $objectKey));
         }
 
         return $this->mapping[$objectKey];
     }
 
-    public function getObjectKey($object): string
+    public function getObjectKey(object|string $object): string
     {
         $className = self::getRealClass(is_string($object) ? $object : get_class($object));
 
         if (false === $key = array_search($className, $this->mapping, true)) {
-            $reflection = new ReflectionClass($className);
+            $reflection = new \ReflectionClass($className);
             while ($reflection->getParentClass()) {
                 $reflection = $reflection->getParentClass();
                 if (false !== $key = array_search($reflection->getName(), $this->mapping, true)) {
@@ -68,10 +60,7 @@ class ObjectMapper
                 }
             }
 
-            throw new InvalidArgumentException(sprintf(
-                    'Class "%s" is not defined in the object mapping',
-                    $className)
-            );
+            throw new \InvalidArgumentException(sprintf('Class "%s" is not defined in the object mapping', $className));
         }
 
         return $key;

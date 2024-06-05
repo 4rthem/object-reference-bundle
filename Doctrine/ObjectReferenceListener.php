@@ -1,39 +1,28 @@
 <?php
 
-namespace Arthem\Bundle\ObjectReferenceBundle\Doctrine;
+namespace Arthem\ObjectReferenceBundle\Doctrine;
 
-use Arthem\Bundle\ObjectReferenceBundle\Mapper\ObjectMapper;
-use Arthem\Bundle\ObjectReferenceBundle\Mapping\Annotation\ObjectReference;
-use Doctrine\Common\Annotations\Reader;
+use Arthem\ObjectReferenceBundle\Mapper\ObjectMapper;
+use Arthem\ObjectReferenceBundle\Mapping\Attribute\ObjectReference;
 use Doctrine\Common\EventSubscriber;
-use Doctrine\ORM\Event\LifecycleEventArgs;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Event\LoadClassMetadataEventArgs;
+use Doctrine\ORM\Event\PostLoadEventArgs;
+use Doctrine\ORM\Event\PrePersistEventArgs;
 use Doctrine\ORM\Events;
-use Doctrine\ORM\Mapping\ClassMetadataInfo;
+use Doctrine\ORM\Mapping\ClassMetadata;
 use Doctrine\Persistence\ObjectManager;
-use ReflectionClass;
 
-class ObjectReferenceListener implements EventSubscriber
+final class ObjectReferenceListener implements EventSubscriber
 {
-    private static $config;
+    private static array $config = [];
 
-    /**
-     * @var Reader
-     */
-    private $annotationReader;
-
-    /**
-     * @var ObjectMapper
-     */
-    private $objectMapper;
-
-    public function __construct(Reader $annotationReader, ObjectMapper $objectMapper)
-    {
-        $this->annotationReader = $annotationReader;
-        $this->objectMapper = $objectMapper;
+    public function __construct(
+        private readonly ObjectMapper $objectMapper
+    ) {
     }
 
-    public function getSubscribedEvents()
+    public function getSubscribedEvents(): array
     {
         return [
             Events::loadClassMetadata,
@@ -42,7 +31,7 @@ class ObjectReferenceListener implements EventSubscriber
         ];
     }
 
-    private function loadConfiguration(ObjectManager $objectManager, string $class): array
+    private function loadConfiguration(ObjectManager $objectManager, string $class): void
     {
         $config = [];
         if (isset(self::$config[$class])) {
@@ -64,15 +53,13 @@ class ObjectReferenceListener implements EventSubscriber
                 }
             }
         }
-
-        return $config;
     }
 
-    public function postLoad(LifecycleEventArgs $eventArgs)
+    public function postLoad(PostLoadEventArgs $eventArgs): void
     {
         $object = $eventArgs->getObject();
         $class = get_class($object);
-        $em = $eventArgs->getEntityManager();
+        $em = $eventArgs->getObjectManager();
         $this->loadConfiguration($em, $class);
 
         if (!isset(self::$config[$class])) {
@@ -98,7 +85,7 @@ class ObjectReferenceListener implements EventSubscriber
         }
     }
 
-    public function prePersist(LifecycleEventArgs $eventArgs)
+    public function prePersist(PrePersistEventArgs $eventArgs)
     {
         $object = $eventArgs->getObject();
         $class = get_class($object);
@@ -108,7 +95,7 @@ class ObjectReferenceListener implements EventSubscriber
             return;
         }
 
-        $reflClass = new ReflectionClass($object);
+        $reflClass = new \ReflectionClass($object);
         foreach (self::$config[$class] as $fieldName => $field) {
             $reflProp = $reflClass->getProperty($fieldName);
             $reflProp->setAccessible(true);
@@ -127,20 +114,22 @@ class ObjectReferenceListener implements EventSubscriber
 
     /**
      * Scans the objects for extended annotations
-     * event subscribers must subscribe to loadClassMetadata event
+     * event subscribers must subscribe to loadClassMetadata event.
      *
-     * @param  ObjectManager $objectManager
-     * @param  object        $metadata
-     * @return void
+     * @param object $metadata
      */
-    public function loadMetadataForObjectClass(ObjectManager $objectManager, ClassMetadataInfo $metadata)
+    public function loadMetadataForObjectClass(ObjectManager $objectManager, ClassMetadata $metadata): void
     {
-        $config = [];
-
         if ($metadata->isMappedSuperclass) {
             return;
         }
 
+        $className = $metadata->getName();
+        if (isset(self::$config[$className])) {
+            return;
+        }
+
+        $config = [];
         $class = $metadata->getReflectionClass();
 
         foreach ($metadata->fieldMappings as $fieldName => $fieldMapping) {
@@ -148,46 +137,44 @@ class ObjectReferenceListener implements EventSubscriber
                 continue;
             }
 
-            $annotations = $this->annotationReader->getPropertyAnnotations($class->getProperty($fieldName));
-            foreach ($annotations as $annotation) {
-                if ($annotation instanceof ObjectReference) {
-                    $this->createFields($config, $metadata, $annotation, $fieldName);
+            $reflectionProperty = new \ReflectionProperty($class->getName(), $fieldName);
+            $attributes = $reflectionProperty->getAttributes(ObjectReference::class);
+            if (!empty($attributes)) {
+                foreach ($attributes as $attribute) {
+                    $config = $this->createFields($config, $metadata, $attribute->newInstance(), $fieldName);
                 }
             }
         }
 
         $cmf = $objectManager->getMetadataFactory();
-        // cache the metadata (even if it's empty)
-        // caching empty metadata will prevent re-parsing non-existent annotations
-        $cacheId = self::getCacheId($metadata->name);
-        if ($cacheDriver = $cmf->getCacheDriver()) {
-            $cacheDriver->save($cacheId, $config, null);
-        }
+        $cmf->setMetadataFor($class->getName(), $metadata);
 
-        if ($config) {
-            self::$config[$metadata->name] = $config;
+        if (!empty($config)) {
+            self::$config[$className] = $config;
         }
     }
 
-    public function loadClassMetadata(LoadClassMetadataEventArgs $eventArgs)
+    public function loadClassMetadata(LoadClassMetadataEventArgs $eventArgs): void
     {
         $this->loadMetadataForObjectClass($eventArgs->getObjectManager(), $eventArgs->getClassMetadata());
     }
 
-    private function createFields(array &$config, ClassMetadataInfo $metadata, ObjectReference $annotation, $fieldName)
+    private function createFields(array $config, ClassMetadata $metadata, ObjectReference $annotation, $fieldName): array
     {
-        $fieldMapping = $metadata->fieldMappings[$fieldName];
-
-        // Copy field type as it represents the ID specification
-        $idField = $fieldMapping;
-        $idField['fieldName'] = $fieldMapping['fieldName'].'Id';
-        unset($idField['columnName']);
-
+        $fieldMapping = $metadata->getFieldMapping($fieldName);
         $typeField = [
             'fieldName' => $fieldMapping['fieldName'].'Type',
-            'type' => 'string',
-            'length' => $annotation->keyLength,
-            'nullable' => $idField['nullable'],
+            'type' => Types::STRING,
+            'length' => $annotation->getKeyLength(),
+            'nullable' => $fieldMapping->nullable,
+        ];
+
+        // Copy field type as it represents the ID specification
+        $idField = [
+            'fieldName' => $fieldMapping->fieldName.'Id',
+            'type' => $fieldMapping->type,
+            'length' => $fieldMapping->length,
+            'nullable' => $fieldMapping->nullable,
         ];
 
         unset($metadata->fieldMappings[$fieldName]);
@@ -200,6 +187,8 @@ class ObjectReferenceListener implements EventSubscriber
             'type' => $typeField['fieldName'],
             'id' => $idField['fieldName'],
         ];
+
+        return $config;
     }
 
     private static function getCacheId(string $className): string

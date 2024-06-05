@@ -1,31 +1,26 @@
 # Object Reference bundle
 
 ```php
-namespace AppBundle\Entity;
+namespace App\Entity;
 
-use Arthem\Bundle\ObjectReferenceBundle\Mapping\Annotation\ObjectReference;
+use Arthem\ObjectReferenceBundle\Mapping\Attribute\ObjectReference;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
-/**
- * @ORM\Table
- * @ORM\Entity
- */
+
+#[ORM\Entity]
 class Story
 {
-    /**
-     * @var object|callable
-     *
-     * @ORM\Column(type="string", length=36)
-     * @ObjectReference()
-     */
-    private $actor;
+    #[ORM\Column(type: Types::STRING, length: 36, nullable: true)] 
+    #[ObjectReference(keyLength: 15)] 
+    private \Closure|Actor $actor;
     private $actorId; // must be declared, even if not used
     private $actorType; // must be declared, even if not used
 
     /**
      * @return object|null
      */
-    public function getActor()
+    public function getActor(): ?Actor
     {
         if ($this->actor instanceof \Closure) {
             $this->actor = $this->actor->call($this);
@@ -34,10 +29,7 @@ class Story
         return $this->actor;
     }
 
-    /**
-     * @param object|null $actor
-     */
-    public function setActor($actor)
+    public function setActor(?Actor $actor)
     {
         $this->actor = $actor;
     }
