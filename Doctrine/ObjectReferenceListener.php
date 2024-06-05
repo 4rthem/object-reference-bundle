@@ -34,26 +34,12 @@ final class ObjectReferenceListener implements EventSubscriber
 
     private function loadConfiguration(ObjectManager $objectManager, string $class): void
     {
-        $config = [];
         if (isset(self::$config[$class])) {
-            $config = self::$config[$class];
-        } else {
-            $factory = $objectManager->getMetadataFactory();
-            $cacheDriver = $factory->getCacheDriver();
-            if ($cacheDriver) {
-                $cacheId = self::getCacheId($class);
-                if (($cached = $cacheDriver->fetch($cacheId)) !== false) {
-                    self::$config[$class] = $cached;
-                    $config = $cached;
-                } else {
-                    // re-generate metadata on cache miss
-                    $this->loadMetadataForObjectClass($objectManager, $factory->getMetadataFor($class));
-                    if (isset(self::$config[$class])) {
-                        $config = self::$config[$class];
-                    }
-                }
-            }
+            return;
         }
+
+        $factory = $objectManager->getMetadataFactory();
+        $this->loadMetadataForObjectClass($objectManager, $factory->getMetadataFor($class));
     }
 
     public function postLoad(PostLoadEventArgs $eventArgs): void
