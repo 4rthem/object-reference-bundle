@@ -16,6 +16,7 @@ use Doctrine\Persistence\ObjectManager;
 
 final class ObjectReferenceListener implements EventSubscriber
 {
+    private const CONFIG_KEY = 'orl_config';
     private array $config = [];
 
     public function __construct(
@@ -124,11 +125,16 @@ final class ObjectReferenceListener implements EventSubscriber
                 continue;
             }
 
-            $reflectionProperty = new \ReflectionProperty($class->getName(), $fieldName);
-            $attributes = $reflectionProperty->getAttributes(ObjectReference::class);
-            if (!empty($attributes)) {
-                foreach ($attributes as $attribute) {
-                    $config = $this->createFields($config, $metadata, $attribute->newInstance(), $fieldName);
+            if (isset($fieldMapping[self::CONFIG_KEY])) {
+                $origFieldName = $fieldMapping[self::CONFIG_KEY]['field'];
+                $config[$origFieldName] = $fieldMapping[self::CONFIG_KEY];
+            } else {
+                $reflectionProperty = new \ReflectionProperty($class->getName(), $fieldName);
+                $attributes = $reflectionProperty->getAttributes(ObjectReference::class);
+                if (!empty($attributes)) {
+                    foreach ($attributes as $attribute) {
+                        $config = $this->createFields($config, $metadata, $attribute->newInstance(), $fieldName);
+                    }
                 }
             }
         }
@@ -161,16 +167,23 @@ final class ObjectReferenceListener implements EventSubscriber
             ];
         }
 
+        $fieldConfig = [
+            'field' => $fieldMapping['fieldName'],
+            'type' => $fieldMapping['fieldName'].'Type',
+            'id' => $fieldMapping['fieldName'].'Id',
+        ];
+
         $typeField = [
-            'fieldName' => $fieldMapping['fieldName'].'Type',
+            'fieldName' => $fieldConfig['type'],
             'type' => Types::STRING,
             'length' => $annotation->getKeyLength(),
             'nullable' => $fieldMapping['nullable'],
+            self::CONFIG_KEY => $fieldConfig,
         ];
 
         // Copy field type as it represents the ID specification
         $idField = [
-            'fieldName' => $fieldMapping['fieldName'].'Id',
+            'fieldName' => $fieldConfig['id'],
             'type' => $fieldMapping['type'],
             'length' => $fieldMapping['length'],
             'nullable' => $fieldMapping['nullable'],
@@ -182,10 +195,7 @@ final class ObjectReferenceListener implements EventSubscriber
         $metadata->mapField($typeField);
         $metadata->mapField($idField);
 
-        $config[$fieldName] = [
-            'type' => $typeField['fieldName'],
-            'id' => $idField['fieldName'],
-        ];
+        $config[$fieldName] = $fieldConfig;
 
         return $config;
     }
