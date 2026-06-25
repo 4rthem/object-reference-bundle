@@ -4,6 +4,7 @@ namespace Arthem\ObjectReferenceBundle\Doctrine;
 
 use Arthem\ObjectReferenceBundle\Mapper\ObjectMapper;
 use Arthem\ObjectReferenceBundle\Mapping\Attribute\ObjectReference;
+use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
 use Doctrine\Common\EventSubscriber;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Event\LoadClassMetadataEventArgs;
@@ -11,26 +12,19 @@ use Doctrine\ORM\Event\PostLoadEventArgs;
 use Doctrine\ORM\Event\PrePersistEventArgs;
 use Doctrine\ORM\Events;
 use Doctrine\ORM\Mapping\ClassMetadata;
-use Doctrine\ORM\Mapping\FieldMapping;
 use Doctrine\Persistence\ObjectManager;
 
-final class ObjectReferenceListener implements EventSubscriber
+#[AsDoctrineListener(event: Events::loadClassMetadata, priority: 500)]
+#[AsDoctrineListener(event: Events::prePersist)]
+#[AsDoctrineListener(event: Events::postLoad)]
+class ObjectReferenceListener
 {
-    private const CONFIG_KEY = 'orl_config';
+    private const string CONFIG_KEY = 'orl_config';
     private array $config = [];
 
     public function __construct(
         private readonly ObjectMapper $objectMapper,
     ) {
-    }
-
-    public function getSubscribedEvents(): array
-    {
-        return [
-            Events::loadClassMetadata,
-            Events::prePersist,
-            Events::postLoad,
-        ];
     }
 
     private function loadConfiguration(ObjectManager $objectManager, string $class): void
@@ -86,26 +80,17 @@ final class ObjectReferenceListener implements EventSubscriber
         $reflClass = new \ReflectionClass($object);
         foreach ($this->config[$class] as $fieldName => $field) {
             $reflProp = $reflClass->getProperty($fieldName);
-            $reflProp->setAccessible(true);
             $value = $reflProp->getValue($object);
             if (is_object($value)) {
                 $reflId = $reflClass->getProperty($field['id']);
-                $reflId->setAccessible(true);
                 $reflId->setValue($object, $value->getId());
 
                 $reflType = $reflClass->getProperty($field['type']);
-                $reflType->setAccessible(true);
                 $reflType->setValue($object, $this->objectMapper->getObjectKey($value));
             }
         }
     }
 
-    /**
-     * Scans the objects for extended annotations
-     * event subscribers must subscribe to loadClassMetadata event.
-     *
-     * @param object $metadata
-     */
     public function loadMetadataForObjectClass(ObjectManager $objectManager, ClassMetadata $metadata): void
     {
         if ($metadata->isMappedSuperclass) {
@@ -155,17 +140,6 @@ final class ObjectReferenceListener implements EventSubscriber
     private function createFields(array $config, ClassMetadata $metadata, ObjectReference $annotation, $fieldName): array
     {
         $fieldMapping = $metadata->getFieldMapping($fieldName);
-
-        if (!is_array($fieldMapping)) {
-            assert($fieldMapping instanceof FieldMapping);
-
-            $fieldMapping = [
-                'fieldName' => $fieldMapping->fieldName,
-                'nullable' => $fieldMapping->nullable,
-                'type' => $fieldMapping->type,
-                'length' => $fieldMapping->length,
-            ];
-        }
 
         $fieldConfig = [
             'field' => $fieldMapping['fieldName'],
