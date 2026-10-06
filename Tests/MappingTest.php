@@ -10,6 +10,7 @@ use Arthem\ObjectReferenceBundle\Tests\Entity\Story;
 use Doctrine\Common\EventManager;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManager;
+use Doctrine\ORM\Events;
 use Doctrine\ORM\Mapping\UnderscoreNamingStrategy;
 use Doctrine\ORM\ORMSetup;
 use PHPUnit\Framework\TestCase;
@@ -23,6 +24,7 @@ class MappingTest extends TestCase
             isDevMode: true,
         );
         $config->setNamingStrategy(new UnderscoreNamingStrategy());
+        $config->enableNativeLazyObjects(true);
 
         $connection = DriverManager::getConnection([
             'driver' => 'pdo_sqlite',
@@ -35,7 +37,11 @@ class MappingTest extends TestCase
         ]);
 
         $eventManager = new EventManager();
-        $eventManager->addEventSubscriber(new ObjectReferenceListener($objectMapper));
+        $eventManager->addEventListener([
+            Events::loadClassMetadata,
+            Events::prePersist,
+            Events::postLoad,
+        ], new ObjectReferenceListener($objectMapper));
         $entityManager = new EntityManager($connection, $config, $eventManager);
 
         $metadata = $entityManager->getClassMetadata(Story::class);
