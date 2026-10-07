@@ -5,7 +5,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.5",
-        "symfony/framework-bundle": "^6.3 || ^7",
+        "symfony/framework-bundle": "^6.4 || ^7.0 || ^8.0",
         "doctrine/orm": "^2.5 || ^3",
         "doctrine/doctrine-bundle": "^2.9 || ^3"
     },
@@ -14,21 +14,22 @@
         "friendsofphp/php-cs-fixer": "^v3.58.1",
         "ramsey/uuid": "^4.7"
     },
+    "config": {
+        "sort-packages": true
+    },
     "autoload": {
         "psr-4": {
-            "Arthem\\ObjectReferenceBundle\\": ""
-        },
-        "exclude-from-classmap": [
-            "/Tests/"
-        ]
+            "Arthem\\ObjectReferenceBundle\\": "src/"
+        }
     },
     "autoload-dev": {
         "psr-4": {
-            "Alchemy\\Bundle\\ObjectReferenceBundle\\Tests\\": "/Tests/"
+            "Arthem\\ObjectReferenceBundle\\Tests\\": "tests/"
         }
     },
     "scripts": {
-        "test": "./vendor/bin/phpunit",
-        "cs": "vendor/bin/php-cs-fixer fix"
+        "test": "vendor/bin/phpunit",
+        "cs": "vendor/bin/php-cs-fixer fix",
+        "cs-check": "vendor/bin/php-cs-fixer fix --dry-run --diff"
     }
 }

@@ -5,7 +5,6 @@ namespace Arthem\ObjectReferenceBundle\Doctrine;
 use Arthem\ObjectReferenceBundle\Mapper\ObjectMapper;
 use Arthem\ObjectReferenceBundle\Mapping\Attribute\ObjectReference;
 use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
-use Doctrine\Common\EventSubscriber;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Event\LoadClassMetadataEventArgs;
 use Doctrine\ORM\Event\PostLoadEventArgs;
@@ -67,7 +66,7 @@ class ObjectReferenceListener
         }
     }
 
-    public function prePersist(PrePersistEventArgs $eventArgs)
+    public function prePersist(PrePersistEventArgs $eventArgs): void
     {
         $object = $eventArgs->getObject();
         $class = get_class($object);

@@ -11,13 +11,13 @@ class Story extends AbstractUuidEntity
 {
     #[ORM\Column(type: Types::STRING, length: 36, nullable: false)]
     #[ObjectReference(keyLength: 15)]
-    private \Closure|PersonInterface $person;
+    private \Closure|PersonInterface|null $person = null;
     private $personId; // must be declared, even if not used
     private $personType; // must be declared, even if not used
 
     #[ORM\Column(type: Types::STRING, length: 36, nullable: true)]
     #[ObjectReference(keyLength: 15)]
-    private \Closure|PersonInterface $owner;
+    private \Closure|PersonInterface|null $owner = null;
     private $ownerId; // must be declared, even if not used
     private $ownerType; // must be declared, even if not used
 
