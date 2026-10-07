@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: 'Tests (PHP ${{ matrix.php }}, Symfony ${{ matrix.symfony }})'
+    name: "Tests (PHP ${{ matrix.php }}, Symfony ${{ matrix.symfony }}${{ matrix.dependencies == 'lowest' && ', lowest deps' || '' }})"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -19,6 +19,12 @@ jobs:
           - '6.4.*'
           - '7.4.*'
           - '8.*'
+        dependencies:
+          - 'highest'
+        include:
+          - php: '8.5'
+            symfony: '6.4.*'
+            dependencies: 'lowest'
     env:
       SYMFONY_REQUIRE: ${{ matrix.symfony }}
     steps:
@@ -32,7 +38,7 @@ jobs:
       - name: Install dependencies
         run: |
           rm -f composer.lock
-          composer update --no-interaction --no-progress --prefer-dist
+          composer update --no-interaction --no-progress --prefer-dist ${{ matrix.dependencies == 'lowest' && '--prefer-lowest' || '' }}
       - name: PHPUnit
         run: composer test
 

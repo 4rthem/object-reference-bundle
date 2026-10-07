@@ -8,6 +8,7 @@ use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Event\LoadClassMetadataEventArgs;
 use Doctrine\ORM\Event\PostLoadEventArgs;
+use Doctrine\ORM\Event\PreFlushEventArgs;
 use Doctrine\ORM\Event\PrePersistEventArgs;
 use Doctrine\ORM\Events;
 use Doctrine\ORM\Mapping\ClassMetadata;
@@ -15,6 +16,7 @@ use Doctrine\Persistence\ObjectManager;
 
 #[AsDoctrineListener(event: Events::loadClassMetadata, priority: 500)]
 #[AsDoctrineListener(event: Events::prePersist)]
+#[AsDoctrineListener(event: Events::preFlush)]
 #[AsDoctrineListener(event: Events::postLoad)]
 class ObjectReferenceListener
 {
@@ -69,9 +71,37 @@ class ObjectReferenceListener
     public function prePersist(PrePersistEventArgs $eventArgs): void
     {
         $object = $eventArgs->getObject();
-        $class = get_class($object);
-        $this->loadConfiguration($eventArgs->getObjectManager(), $class);
+        $this->loadConfiguration($eventArgs->getObjectManager(), get_class($object));
+        $this->syncReferenceFields($object);
+    }
 
+    /**
+     * Reference properties are not mapped, so Doctrine cannot detect their changes:
+     * the type and id fields must be synced before the change sets are computed.
+     */
+    public function preFlush(PreFlushEventArgs $eventArgs): void
+    {
+        $uow = $eventArgs->getObjectManager()->getUnitOfWork();
+
+        $entities = $uow->getScheduledEntityInsertions();
+        foreach ($uow->getIdentityMap() as $classEntities) {
+            foreach ($classEntities as $entity) {
+                $entities[spl_object_id($entity)] = $entity;
+            }
+        }
+
+        foreach ($entities as $entity) {
+            if ($uow->isUninitializedObject($entity)) {
+                continue;
+            }
+
+            $this->syncReferenceFields($entity);
+        }
+    }
+
+    private function syncReferenceFields(object $object): void
+    {
+        $class = get_class($object);
         if (!isset($this->config[$class])) {
             return;
         }
@@ -79,14 +109,25 @@ class ObjectReferenceListener
         $reflClass = new \ReflectionClass($object);
         foreach ($this->config[$class] as $fieldName => $field) {
             $reflProp = $reflClass->getProperty($fieldName);
-            $value = $reflProp->getValue($object);
-            if (is_object($value)) {
-                $reflId = $reflClass->getProperty($field['id']);
-                $reflId->setValue($object, $value->getId());
-
-                $reflType = $reflClass->getProperty($field['type']);
-                $reflType->setValue($object, $this->objectMapper->getObjectKey($value));
+            if (!$reflProp->isInitialized($object)) {
+                continue;
             }
+
+            $value = $reflProp->getValue($object);
+            // A closure is the lazy reference set by postLoad and never resolved, hence unchanged.
+            if ($value instanceof \Closure) {
+                continue;
+            }
+
+            $id = null;
+            $type = null;
+            if (is_object($value)) {
+                $id = $value->getId();
+                $type = $this->objectMapper->getObjectKey($value);
+            }
+
+            $reflClass->getProperty($field['id'])->setValue($object, $id);
+            $reflClass->getProperty($field['type'])->setValue($object, $type);
         }
     }
 

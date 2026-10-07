@@ -28,7 +28,9 @@ class ObjectReferenceListenerTest extends TestCase
             isDevMode: true,
         );
         $config->setNamingStrategy(new UnderscoreNamingStrategy());
-        $config->enableNativeLazyObjects(true);
+        if (method_exists($config, 'enableNativeLazyObjects')) {
+            $config->enableNativeLazyObjects(true);
+        }
 
         $connection = DriverManager::getConnection([
             'driver' => 'pdo_sqlite',
@@ -44,6 +46,7 @@ class ObjectReferenceListenerTest extends TestCase
         $eventManager->addEventListener([
             Events::loadClassMetadata,
             Events::prePersist,
+            Events::preFlush,
             Events::postLoad,
         ], new ObjectReferenceListener($objectMapper));
 
@@ -223,6 +226,85 @@ class ObjectReferenceListenerTest extends TestCase
         $loaded = $this->em->find(Story::class, $story->getId());
 
         $this->assertNull($loaded->getPerson());
+    }
+
+    public function testUpdatingReferenceOfManagedEntityIsPersisted(): void
+    {
+        $this->createSchema();
+
+        $actor = new Actor();
+        $civilian = new Civilian();
+        $story = new Story();
+        $story->setPerson($actor);
+        $story->setOwner($civilian);
+
+        $this->em->persist($actor);
+        $this->em->persist($civilian);
+        $this->em->persist($story);
+        $this->em->flush();
+        $this->em->clear();
+
+        $loaded = $this->em->find(Story::class, $story->getId());
+        $loaded->setPerson($this->em->find(Civilian::class, $civilian->getId()));
+        $loaded->setOwner(null);
+        $this->em->flush();
+
+        $this->assertSame([
+            'person_type' => 'civil',
+            'person_id' => $civilian->getId(),
+            'owner_type' => null,
+            'owner_id' => null,
+        ], $this->fetchStoryRow($story->getId()));
+    }
+
+    public function testUpdatingReferenceBeforeFlushOfNewEntityIsPersisted(): void
+    {
+        $this->createSchema();
+
+        $actor = new Actor();
+        $civilian = new Civilian();
+        $story = new Story();
+        $story->setPerson($actor);
+        $story->setOwner($actor);
+
+        $this->em->persist($actor);
+        $this->em->persist($civilian);
+        $this->em->persist($story);
+        $story->setPerson($civilian);
+        $story->setOwner(null);
+        $this->em->flush();
+
+        $this->assertSame([
+            'person_type' => 'civil',
+            'person_id' => $civilian->getId(),
+            'owner_type' => null,
+            'owner_id' => null,
+        ], $this->fetchStoryRow($story->getId()));
+    }
+
+    public function testUnresolvedReferenceIsKeptOnFlush(): void
+    {
+        $this->createSchema();
+
+        $actor = new Actor();
+        $story = new Story();
+        $story->setPerson($actor);
+        $story->setOwner($actor);
+
+        $this->em->persist($actor);
+        $this->em->persist($story);
+        $this->em->flush();
+        $this->em->clear();
+
+        $this->em->find(Story::class, $story->getId());
+        $this->em->flush();
+
+        $this->assertSame([
+            'person_type' => 'actor',
+            'person_id' => $actor->getId(),
+            'owner_type' => 'actor',
+            'owner_id' => $actor->getId(),
+        ], $this->fetchStoryRow($story->getId()));
     }
 
     private function createSchema(): void

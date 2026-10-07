@@ -18,6 +18,11 @@ class ArthemObjectReferenceBundleTest extends TestCase
         $this->assertSame('arthem_object_reference', (new ArthemObjectReferenceBundle())->getContainerExtension()->getAlias());
     }
 
+    public function testPathIsThePackageRoot(): void
+    {
+        $this->assertSame(\dirname(__DIR__), (new ArthemObjectReferenceBundle())->getPath());
+    }
+
     public function testServicesAreRegistered(): void
     {
         $container = $this->load([]);

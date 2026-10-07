@@ -11,6 +11,11 @@ use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
 
 class ArthemObjectReferenceBundle extends AbstractBundle
 {
+    public function getPath(): string
+    {
+        return \dirname(__DIR__);
+    }
+
     public function configure(DefinitionConfigurator $definition): void
     {
         $definition->rootNode()
