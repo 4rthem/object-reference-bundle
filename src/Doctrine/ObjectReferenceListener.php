@@ -20,7 +20,6 @@ use Doctrine\Persistence\ObjectManager;
 #[AsDoctrineListener(event: Events::postLoad)]
 class ObjectReferenceListener
 {
-    private const string CONFIG_KEY = 'orl_config';
     private array $config = [];
 
     public function __construct(
@@ -45,7 +44,7 @@ class ObjectReferenceListener
         $em = $eventArgs->getObjectManager();
         $this->loadConfiguration($em, $class);
 
-        if (!isset($this->config[$class])) {
+        if (empty($this->config[$class])) {
             return;
         }
 
@@ -102,7 +101,7 @@ class ObjectReferenceListener
     private function syncReferenceFields(object $object): void
     {
         $class = get_class($object);
-        if (!isset($this->config[$class])) {
+        if (empty($this->config[$class])) {
             return;
         }
 
@@ -143,33 +142,29 @@ class ObjectReferenceListener
         }
 
         $config = [];
-        $class = $metadata->getReflectionClass();
-
-        foreach ($metadata->fieldMappings as $fieldName => $fieldMapping) {
-            if (!$class->hasProperty($fieldName)) {
+        foreach ($metadata->getReflectionClass()->getProperties() as $property) {
+            $attributes = $property->getAttributes(ObjectReference::class);
+            if (empty($attributes)) {
                 continue;
             }
 
-            if (isset($fieldMapping[self::CONFIG_KEY])) {
-                $origFieldName = $fieldMapping[self::CONFIG_KEY]['field'];
-                $config[$origFieldName] = $fieldMapping[self::CONFIG_KEY];
-            } else {
-                $reflectionProperty = new \ReflectionProperty($class->getName(), $fieldName);
-                $attributes = $reflectionProperty->getAttributes(ObjectReference::class);
-                if (!empty($attributes)) {
-                    foreach ($attributes as $attribute) {
-                        $config = $this->createFields($config, $metadata, $attribute->newInstance(), $fieldName);
-                    }
-                }
+            $fieldName = $property->getName();
+            $fieldConfig = [
+                'field' => $fieldName,
+                'type' => $fieldName.'Type',
+                'id' => $fieldName.'Id',
+            ];
+
+            if ($metadata->hasField($fieldName)) {
+                $this->replaceReferenceField($metadata, $attributes[0]->newInstance(), $fieldConfig);
+            } elseif (!$metadata->hasField($fieldConfig['type']) || !$metadata->hasField($fieldConfig['id'])) {
+                continue;
             }
+
+            $config[$fieldName] = $fieldConfig;
         }
 
-        $cmf = $objectManager->getMetadataFactory();
-        $cmf->setMetadataFor($class->getName(), $metadata);
-
-        if (!empty($config)) {
-            $this->config[$className] = $config;
-        }
+        $this->config[$className] = $config;
     }
 
     public function loadClassMetadata(LoadClassMetadataEventArgs $eventArgs): void
@@ -177,22 +172,20 @@ class ObjectReferenceListener
         $this->loadMetadataForObjectClass($eventArgs->getObjectManager(), $eventArgs->getClassMetadata());
     }
 
-    private function createFields(array $config, ClassMetadata $metadata, ObjectReference $annotation, $fieldName): array
+    /**
+     * Replaces the mapped reference field by the two fields holding the referenced object type and id.
+     *
+     * @param array{field: string, type: string, id: string} $fieldConfig
+     */
+    private function replaceReferenceField(ClassMetadata $metadata, ObjectReference $attribute, array $fieldConfig): void
     {
-        $fieldMapping = $metadata->getFieldMapping($fieldName);
-
-        $fieldConfig = [
-            'field' => $fieldMapping['fieldName'],
-            'type' => $fieldMapping['fieldName'].'Type',
-            'id' => $fieldMapping['fieldName'].'Id',
-        ];
+        $fieldMapping = $metadata->getFieldMapping($fieldConfig['field']);
 
         $typeField = [
             'fieldName' => $fieldConfig['type'],
             'type' => Types::STRING,
-            'length' => $annotation->getKeyLength(),
+            'length' => $attribute->getKeyLength(),
             'nullable' => $fieldMapping['nullable'],
-            self::CONFIG_KEY => $fieldConfig,
         ];
 
         // Copy field type as it represents the ID specification
@@ -203,14 +196,10 @@ class ObjectReferenceListener
             'nullable' => $fieldMapping['nullable'],
         ];
 
-        unset($metadata->fieldMappings[$fieldName]);
-        unset($metadata->fieldNames[array_search($fieldName, $metadata->fieldNames, true)]);
+        unset($metadata->fieldMappings[$fieldConfig['field']]);
+        unset($metadata->fieldNames[array_search($fieldConfig['field'], $metadata->fieldNames, true)]);
 
         $metadata->mapField($typeField);
         $metadata->mapField($idField);
-
-        $config[$fieldName] = $fieldConfig;
-
-        return $config;
     }
 }

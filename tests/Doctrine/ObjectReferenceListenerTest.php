@@ -8,20 +8,34 @@ use Arthem\ObjectReferenceBundle\Tests\Entity\Actor;
 use Arthem\ObjectReferenceBundle\Tests\Entity\Civilian;
 use Arthem\ObjectReferenceBundle\Tests\Entity\Story;
 use Doctrine\Common\EventManager;
+use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Event\LoadClassMetadataEventArgs;
 use Doctrine\ORM\Events;
 use Doctrine\ORM\Mapping\UnderscoreNamingStrategy;
 use Doctrine\ORM\ORMSetup;
 use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\TestCase;
+use Psr\Cache\CacheItemPoolInterface;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 
 class ObjectReferenceListenerTest extends TestCase
 {
     private EntityManagerInterface $em;
 
     protected function setUp(): void
+    {
+        $connection = DriverManager::getConnection([
+            'driver' => 'pdo_sqlite',
+            'memory' => true,
+        ]);
+
+        $this->em = $this->createEntityManager($connection);
+    }
+
+    private function createEntityManager(Connection $connection, ?CacheItemPoolInterface $metadataCache = null): EntityManagerInterface
     {
         $config = ORMSetup::createAttributeMetadataConfiguration(
             paths: [__DIR__.'/../Entity'],
@@ -31,11 +45,9 @@ class ObjectReferenceListenerTest extends TestCase
         if (method_exists($config, 'enableNativeLazyObjects')) {
             $config->enableNativeLazyObjects(true);
         }
-
-        $connection = DriverManager::getConnection([
-            'driver' => 'pdo_sqlite',
-            'memory' => true,
-        ], $config);
+        if (null !== $metadataCache) {
+            $config->setMetadataCache($metadataCache);
+        }
 
         $objectMapper = new ObjectMapper([
             'actor' => Actor::class,
@@ -50,7 +62,7 @@ class ObjectReferenceListenerTest extends TestCase
             Events::postLoad,
         ], new ObjectReferenceListener($objectMapper));
 
-        $this->em = new EntityManager($connection, $config, $eventManager);
+        return new EntityManager($connection, $config, $eventManager);
     }
 
     public function testReferenceFieldIsReplacedByTypeAndIdFields(): void
@@ -305,6 +317,59 @@ class ObjectReferenceListenerTest extends TestCase
             'owner_type' => 'actor',
             'owner_id' => $actor->getId(),
         ], $this->fetchStoryRow($story->getId()));
+    }
+
+    /**
+     * In production the metadata comes from the cache: the loadClassMetadata event never fires
+     * and the listener only gets the already rewritten, unserialized mapping.
+     */
+    public function testReferencesWorkWithMetadataLoadedFromCache(): void
+    {
+        $cache = new ArrayAdapter();
+        $warmup = $this->createEntityManager($this->em->getConnection(), $cache);
+        foreach ([Actor::class, Civilian::class, Story::class] as $class) {
+            $warmup->getClassMetadata($class);
+        }
+
+        $this->em = $this->createEntityManager($this->em->getConnection(), $cache);
+        $loadedClasses = [];
+        $this->em->getEventManager()->addEventListener(Events::loadClassMetadata, new class($loadedClasses) {
+            public function __construct(private array &$loadedClasses)
+            {
+            }
+
+            public function loadClassMetadata(LoadClassMetadataEventArgs $eventArgs): void
+            {
+                $this->loadedClasses[] = $eventArgs->getClassMetadata()->getName();
+            }
+        });
+        $this->createSchema();
+
+        $actor = new Actor();
+        $civilian = new Civilian();
+        $story = new Story();
+        $story->setPerson($actor);
+        $story->setOwner($civilian);
+
+        $this->em->persist($actor);
+        $this->em->persist($civilian);
+        $this->em->persist($story);
+        $this->em->flush();
+        $this->em->clear();
+
+        $this->assertSame([], $loadedClasses, 'Metadata must come from the cache, not from the mapping driver.');
+        $this->assertSame([
+            'person_type' => 'actor',
+            'person_id' => $actor->getId(),
+            'owner_type' => 'civil',
+            'owner_id' => $civilian->getId(),
+        ], $this->fetchStoryRow($story->getId()));
+
+        $loaded = $this->em->find(Story::class, $story->getId());
+        $this->assertInstanceOf(Actor::class, $loaded->getPerson());
+        $this->assertSame($actor->getId(), $loaded->getPerson()->getId());
+        $this->assertInstanceOf(Civilian::class, $loaded->getOwner());
+        $this->assertSame($civilian->getId(), $loaded->getOwner()->getId());
     }
 
     private function createSchema(): void
